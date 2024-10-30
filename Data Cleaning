@@ -1,1 +1,81 @@
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.ticker as ticker
+from matplotlib.ticker import FuncFormatter
+
+url = "https://github.com/logangreen134/Growing-Small-Town-Nebraska-Podcast-Project/blob/cc61246c08c5759d0ddde46d29ed822c4d146b41/psam_p31.csv?raw=true"
+data = pd.read_csv(url)
+
+# Function to merge 2 PUMA columns into one.
+# I checked the maps and the PUMA regions for Nebraska did not change between the 2010 and 2020 census.
+# https://www2.census.gov/geo/maps/DC2020/PUMA/st31_ne/
+# https://www2.census.gov/geo/maps/dc10map/PUMA_RefMap/st31_ne/
+def mergePUMA(row, cat1, cat2):
+    if row[cat1] == -9:
+        return row[cat2]
+    elif row[cat2] == -9:
+        return row[cat1]
+    # Including else statement to find any situations not accounted for in the code.
+    else:
+        return "error"
+
+# Checking that PUMA10 and PUMA20 aren't both -9 at the same time.
+data[(data['PUMA10'] == -9) & (data['PUMA20'] == -9)].empty
+
+# Merging the two columns into one.
+data['PUMA'] = data.apply(mergePUMA, args = ('PUMA10', 'PUMA20'), axis = 1)
+
+# Checking to make sure no -9 values remain.
+data[data['PUMA'] == -9].empty
+
+# Checking to make sure no error values are returned.
+data[data['PUMA'] == "error"].empty
+
+# Adding the decimal point to the income adjuster.
+data['ADJINC'] = data['ADJINC'].astype(str).apply(lambda x: x[:1] + '.' + x[1:]).astype(float)
+
+# Using income adjuster to account for income difference by year.
+data['Individual_Adjusted_Total_Income'] = data['ADJINC'] * data['PINCP']
+
+household_income = data.groupby('SERIALNO')['Individual_Adjusted_Total_Income'].sum().rename("Household_Adjusted_Total_Income")
+
+# Creating column for household income which sums individual's incomes within a household.
+data = data.merge(household_income, on = 'SERIALNO', how = 'left')
+
+# Dropping variables that are no longer needed.
+data = data.drop(['PUMA10', 'PUMA20', 'ADJINC'], axis=1)
+
+# Returns Household average, adjusted income in Nebraska. There are no NA values to affect the mean as version 2 returns the same number.
+average_HH_Inc = np.nanmean(household_income)
+
+# Checking that these values were the same
+# average_HH_Inc_v2 = np.nanmean(np.nan_to_num(data.groupby('SERIALNO')['Individual_Adjusted_Total_Income'].sum())
+
+median_HH_Inc = np.median(household_income)
+
+def money_formatter(x, pos):
+    return '{:}'.format(int(x / 1000))  # Assuming 2 decimal places and $100 as the base unit
+
+
+fig, ax = plt.subplots(figsize = (9, 6))
+sns.histplot(household_income.sort_values(), bins=50, kde=True, color='skyblue')
+
+plt.axvline(x=average_HH_Inc, linestyle = "--")
+plt.text(average_HH_Inc - 3000, 4500, 'Average: $' + str(round(average_HH_Inc)), ha='center', va='bottom', rotation = 90)
+plt.axvline(x=median_HH_Inc, linestyle = "--")
+plt.text(median_HH_Inc - 3000, 4500, 'Median: $' + str(round(median_HH_Inc)), ha='center', va='bottom', rotation = 90)
+
+formatter = ticker.ScalarFormatter()
+formatter.set_scientific(False)
+
+plt.title('Household Income Distribution')
+plt.xlabel('Income (USD)')
+plt.ylabel('Frequency')
+ax.xaxis.set_major_formatter(FuncFormatter(money_formatter))
+plt.grid(axis='y', linestyle='--')
+plt.xlim(0, 400000)
+fig.tight_layout()
+plt.xlabel("Income $1000s USD")
+plt.show()
