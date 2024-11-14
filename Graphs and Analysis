@@ -5,6 +5,12 @@ import seaborn as sns
 import matplotlib.ticker as ticker
 from matplotlib.ticker import FuncFormatter
 import matplotlib.ticker as mtick
+import geopandas as gpd
+from scipy.stats import linregress
+import plotly.express as px
+import json
+import plotly.io as pio
+import kaleido
 
 url = "https://github.com/logangreen134/Growing-Small-Town-Nebraska-Podcast-Project/blob/917815ef0ece6099cc103f8190c00c3b8f35044d/cleanData.csv?raw=true"
 data = pd.read_csv(url)
@@ -164,3 +170,139 @@ ax1.xaxis.grid(True, color='#EEEEEE')
 ax1.yaxis.grid(False)
 ax1.xaxis.set_major_formatter(mtick.PercentFormatter(xmax = tempdata.sum()))
 plt.show() 
+
+url = "https://github.com/logangreen134/Growing-Small-Town-Nebraska-Podcast-Project/blob/dee800ad547e8874e926a3387dd51fe319503189/psam_p31.csv?raw=true"
+df = pd.read_csv(url)
+
+# Dictionary for shortened column names
+shortened_column_mapping = {
+    'SERIALNO': 'Housing Unit Serial No.',
+    'SPORDER': 'Person No.',
+    'PUMA10': 'PUMA Code 2010',
+    'PUMA20': 'PUMA Code 2020',
+    'REGION': 'Region Code',
+    'ADJINC': 'Income Adjustment Factor',
+    'PWGTP': 'Person Weight',
+    'AGEP': 'Age',
+    'COW': 'Class of Worker',
+    'INTP': 'Interest & Rental Income',
+    'MAR': 'Marital Status',
+    'MIG': 'Mobility Status',
+    'NWAB': 'Absence from Work',
+    'NWAV': 'Available for Work',
+    'NWLA': 'On Layoff',
+    'NWLK': 'Looking for Work',
+    'NWRE': 'Recall Informed',
+    'OIP': 'Other Income',
+    'PAP': 'Public Assistance',
+    'RELSHIPP': 'Relationship to Reference Person',
+    'RETP': 'Retirement Income',
+    'SCH': 'School Enrollment',
+    'SCHG': 'Grade Level',
+    'SCHL': 'Educational Attainment',
+    'SEMP': 'Self-employment Income',
+    'SEX': 'Sex',
+    'SSIP': 'Supplementary Security Income',
+    'SSP': 'Social Security Income',
+    'WAGP': 'Wages & Salary Income',
+    'WKHP': 'Hours Worked per Week',
+    'WKL': 'When Last Worked',
+    'WKW': 'Weeks Worked',
+    'WKWN': 'Weeks Worked (2019+)',
+    'WRK': 'Worked Last Week',
+    'FOD1P': 'Field of Degree 1',
+    'FOD2P': 'Field of Degree 2',
+    'HICOV': 'Health Insurance Coverage',
+    'HISP': 'Hispanic Origin',
+    'INDP': 'Industry Code',
+    'OCCP': 'Occupation Code',
+    'PERNP': "Person's Earnings",
+    'PINCP': "Person's Income",
+    'POBP': 'Place of Birth',
+    'SOCP': 'SOC Occupation Code'
+}
+
+# Function to rename columns in an existing DataFrame `df`
+def rename_columns(dataframe, mapping):
+    return dataframe.rename(columns=mapping)
+
+# Filter to include only people with self-employment income > $10,000
+filtered_df = df[df['SEMP'] > 10000]
+
+# Filter for PUMA10 data (exclude records with PUMA10 as -9)
+puma10_df = filtered_df[filtered_df['PUMA10'] != -9]
+
+# Filter for PUMA20 data (exclude records with PUMA20 as -9)
+puma20_df = filtered_df[filtered_df['PUMA20'] != -9]
+
+# Group by PUMA10 with weighted count
+income_by_puma10 = puma10_df.groupby('PUMA10')['PWGTP'].sum().reset_index(name='Weighted Count')
+
+# Group by PUMA20 with weighted count
+income_by_puma20 = puma20_df.groupby('PUMA20')['PWGTP'].sum().reset_index(name='Weighted Count')
+
+# Load the Nebraska PUMA10 map shapefile
+nebraska_puma_map = gpd.read_file('/content/tl_2021_31_puma10/tl_2021_31_puma10.shp')
+
+# Convert PUMA10 to strings with padding for consistent merging
+income_by_puma10['PUMA10'] = income_by_puma10['PUMA10'].astype(str).str.zfill(5)
+nebraska_puma_map['PUMACE10'] = nebraska_puma_map['PUMACE10'].astype(str)
+
+# Merge map data with income data
+map_data_puma10 = nebraska_puma_map.merge(income_by_puma10, left_on='PUMACE10', right_on='PUMA10', how='left')
+map_data_puma10['Weighted Count'] = map_data_puma10['Weighted Count'].fillna(0)  # Fill missing data with 0
+
+# Convert the merged GeoDataFrame to GeoJSON format
+geojson_data = map_data_puma10.__geo_interface__
+
+geojson_data = json.loads(map_data_puma10.to_json())
+
+# Plotly choropleth
+fig10 = px.choropleth_mapbox(
+    map_data_puma10,
+    geojson=geojson_data,
+    locations=map_data_puma10.index,
+    color='Weighted Count',
+    hover_name='NAMELSAD10',  # Display PUMA name on hover
+    hover_data={'Weighted Count': True, 'PUMACE10': True},  # Show count and PUMA10 code
+    color_continuous_scale="OrRd",
+    mapbox_style="carto-positron",
+    center={"lat": 41.5, "lon": -99.5},  # Nebraska centered
+    zoom=6,
+    title="Nebraska PUMA10 Regions by Weighted Self-Employment Income > $10,000"
+)
+
+fig10.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+fig10.show()
+
+####### Same as above for 2020 census
+
+nebraska_puma20_map = gpd.read_file('/content/tl_2022_31_puma20/tl_2022_31_puma20.shp')
+
+income_by_puma20['PUMA20'] = income_by_puma20['PUMA20'].astype(str).str.zfill(5)
+nebraska_puma20_map['PUMACE20'] = nebraska_puma20_map['PUMACE20'].astype(str)
+
+map_data_puma20 = nebraska_puma20_map.merge(income_by_puma20, left_on='PUMACE20', right_on='PUMA20', how='left')
+map_data_puma20['Weighted Count'] = map_data_puma20['Weighted Count'].fillna(0)
+
+map_data_puma20 = map_data_puma20.set_index('PUMACE20')
+geojson_data = json.loads(map_data_puma20.to_json())
+
+fig20 = px.choropleth_mapbox(
+    map_data_puma20,
+    geojson=geojson_data,
+    locations=map_data_puma20.index,
+    color='Weighted Count',
+    hover_name='NAMELSAD20',
+    hover_data={'Weighted Count': True, 'PUMA20': True},
+    color_continuous_scale="OrRd",
+    mapbox_style="carto-positron",
+    center={"lat": 41.5, "lon": -99.8},
+    zoom=6,
+    title="Nebraska PUMA20 Regions by Weighted Self-Employment Income > $10,000"
+)
+
+fig20.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+fig20.show()
+
+
