@@ -6,7 +6,7 @@ import matplotlib.ticker as ticker
 from matplotlib.ticker import FuncFormatter
 import matplotlib.ticker as mtick
 
-url = "https://github.com/logangreen134/Growing-Small-Town-Nebraska-Podcast-Project/blob/cc61246c08c5759d0ddde46d29ed822c4d146b41/psam_p31.csv?raw=true"
+url = "https://github.com/logangreen134/Growing-Small-Town-Nebraska-Podcast-Project/blob/917815ef0ece6099cc103f8190c00c3b8f35044d/cleanData.csv?raw=true"
 data = pd.read_csv(url)
 
 # Returns Household average, adjusted income in Nebraska. There are no NA values to affect the mean as version 2 returns the same number.
